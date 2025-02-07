@@ -1,5 +1,5 @@
 import os
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -23,19 +23,6 @@ class YouTubeStreamer:
         self.api_name = "youtube"
         self.api_version = "v3"
         self.redirect_uri = "https://ytstream-py.onrender.com/auth/callback"
-        self.client_config = {
-            "web": {
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [self.redirect_uri],
-                "javascript_origins": [
-                    "https://ytsattu.netlify.app",
-                    "https://ytstream-py.onrender.com"
-                ]
-            }
-        }
 
     def get_auth_url(self):
         """Get YouTube authentication URL"""
@@ -43,13 +30,31 @@ class YouTubeStreamer:
             if not self.client_id or not self.client_secret:
                 raise ValueError("YouTube credentials not found")
             
-            flow = InstalledAppFlow.from_client_config(self.client_config, self.scopes)
+            flow = Flow.from_client_config(
+                {
+                    "web": {
+                        "client_id": self.client_id,
+                        "project_id": "ytstream-py",
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                        "client_secret": self.client_secret,
+                        "redirect_uris": [self.redirect_uri],
+                        "javascript_origins": [
+                            "https://ytsattu.netlify.app",
+                            "https://ytstream-py.onrender.com"
+                        ]
+                    }
+                },
+                scopes=self.scopes,
+                redirect_uri=self.redirect_uri
+            )
             
-            auth_url = flow.authorization_url(
+            auth_url, _ = flow.authorization_url(
                 access_type='offline',
                 include_granted_scopes='true',
                 prompt='consent'
-            )[0]
+            )
             
             return auth_url
             
@@ -63,10 +68,29 @@ class YouTubeStreamer:
             if not auth_code:
                 raise ValueError("Authorization code is missing")
             
-            flow = InstalledAppFlow.from_client_config(self.client_config, self.scopes)
+            flow = Flow.from_client_config(
+                {
+                    "web": {
+                        "client_id": self.client_id,
+                        "project_id": "ytstream-py",
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                        "client_secret": self.client_secret,
+                        "redirect_uris": [self.redirect_uri],
+                        "javascript_origins": [
+                            "https://ytsattu.netlify.app",
+                            "https://ytstream-py.onrender.com"
+                        ]
+                    }
+                },
+                scopes=self.scopes,
+                redirect_uri=self.redirect_uri
+            )
             
             flow.fetch_token(code=auth_code)
             return flow.credentials
+            
         except Exception as e:
             logger.error(f"Credentials error: {str(e)}")
             raise
