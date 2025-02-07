@@ -12,13 +12,13 @@ app = Flask(__name__)
 CORS(app, resources={
     r"/*": {
         "origins": [
-            "http://localhost:3000",
-            "https://ytstream-py.onrender.com",  # Add your backend domain
-            "https://your-frontend-domain.com"    # Add your frontend domain
+            "http://localhost:3000",  # Local development
+            "https://ytstream-py.onrender.com",  # Backend
+            "http://localhost:5000"  # Frontend development
         ],
         "supports_credentials": True,
         "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"]
+        "allow_headers": ["Content-Type", "Authorization", "Origin"]
     }
 })
 
@@ -58,15 +58,30 @@ def health_check():
 @app.route('/start-stream', methods=['POST'])
 def start_stream():
     try:
+        # Log the request
+        logger.info("Received stream request")
+        
         if 'video' not in request.files:
-            return jsonify({'success': False, 'message': 'No video file provided'}), 400
+            return jsonify({
+                'success': False, 
+                'message': 'No video file provided'
+            }), 400
         
         file = request.files['video']
         title = request.form.get('title', 'Untitled Stream')
         
         if file.filename == '':
-            return jsonify({'success': False, 'message': 'No selected file'}), 400
+            return jsonify({
+                'success': False, 
+                'message': 'No selected file'
+            }), 400
             
+        if not allowed_file(file.filename):
+            return jsonify({
+                'success': False,
+                'message': 'Invalid file type. Allowed types: mp4, avi, mkv, mov'
+            }), 400
+
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
@@ -94,13 +109,24 @@ def start_stream():
                     'streamUrl': f'https://youtube.com/watch?v={broadcast_id}'
                 })
             
+            except Exception as e:
+                logger.error(f"Streaming error: {str(e)}")
+                return jsonify({
+                    'success': False,
+                    'message': f"Failed to start stream: {str(e)}"
+                }), 500
+            
             finally:
                 # Clean up the uploaded file
                 if os.path.exists(filepath):
                     os.remove(filepath)
                     
     except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
+        logger.error(f"Server error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f"Server error: {str(e)}"
+        }), 500
 
 @app.errorhandler(500)
 def internal_error(error):

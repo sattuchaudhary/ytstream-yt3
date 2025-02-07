@@ -18,31 +18,37 @@ class YouTubeStreamer:
 
     def authenticate(self):
         """Authenticate with YouTube API"""
-        client_config = {
-            "installed": {
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [
-                    "https://ytstream-py.onrender.com/oauth2callback",
-                    "http://localhost:10000/oauth2callback"
-                ]
+        try:
+            client_config = {
+                "installed": {
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [
+                        "https://ytstream-py.onrender.com/oauth2callback",
+                        "http://localhost:10000/oauth2callback"
+                    ]
+                }
             }
-        }
-        
-        flow = InstalledAppFlow.from_client_config(
-            client_config,
-            self.scopes,
-            redirect_uri="https://ytstream-py.onrender.com/oauth2callback"
-        )
-        credentials = flow.run_local_server(
-            port=0,
-            prompt='consent',
-            access_type='offline',
-            success_message='Authentication successful! You can close this window.'
-        )
-        return build(self.api_name, self.api_version, credentials=credentials)
+            
+            if not self.client_id or not self.client_secret:
+                raise ValueError("YouTube credentials not found. Please check your environment variables.")
+
+            flow = InstalledAppFlow.from_client_config(
+                client_config,
+                self.scopes,
+                redirect_uri="https://ytstream-py.onrender.com/oauth2callback"
+            )
+            credentials = flow.run_local_server(
+                port=0,
+                prompt='consent',
+                access_type='offline',
+                success_message='Authentication successful! You can close this window.'
+            )
+            return build(self.api_name, self.api_version, credentials=credentials)
+        except Exception as e:
+            raise Exception(f"Authentication failed: {str(e)}")
 
     def create_broadcast(self, youtube, title, description):
         """Create YouTube broadcast"""
