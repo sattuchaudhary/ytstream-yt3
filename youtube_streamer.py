@@ -5,8 +5,11 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 import subprocess
 from dotenv import load_dotenv
+import logging
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 class YouTubeStreamer:
     def __init__(self):
@@ -25,10 +28,7 @@ class YouTubeStreamer:
                     "client_secret": self.client_secret,
                     "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                     "token_uri": "https://oauth2.googleapis.com/token",
-                    "redirect_uris": [
-                        "https://ytstream-py.onrender.com/oauth2callback",
-                        "http://localhost:10000/oauth2callback"
-                    ]
+                    "redirect_uris": ["http://localhost:10000/oauth2callback"]  # Simplified redirect
                 }
             }
             
@@ -37,17 +37,19 @@ class YouTubeStreamer:
 
             flow = InstalledAppFlow.from_client_config(
                 client_config,
-                self.scopes,
-                redirect_uri="https://ytstream-py.onrender.com/oauth2callback"
+                self.scopes
             )
-            credentials = flow.run_local_server(
-                port=0,
-                prompt='consent',
-                access_type='offline',
-                success_message='Authentication successful! You can close this window.'
+            # Use credentials directly instead of local server
+            credentials = Credentials(
+                None,
+                client_id=self.client_id,
+                client_secret=self.client_secret,
+                token_uri="https://oauth2.googleapis.com/token",
+                scopes=self.scopes
             )
             return build(self.api_name, self.api_version, credentials=credentials)
         except Exception as e:
+            logger.error(f"Authentication error: {str(e)}")
             raise Exception(f"Authentication failed: {str(e)}")
 
     def create_broadcast(self, youtube, title, description):
@@ -123,3 +125,38 @@ class YouTubeStreamer:
         ]
         
         subprocess.run(command)
+
+    def get_auth_url(self):
+        """Get YouTube authentication URL"""
+        flow = InstalledAppFlow.from_client_config(
+            self.client_config,
+            self.scopes,
+            redirect_uri="https://ytstream-py.onrender.com/auth/callback"
+        )
+        return flow.authorization_url(prompt='consent')[0]
+
+    def get_credentials_from_code(self, code):
+        """Get credentials from authorization code"""
+        flow = InstalledAppFlow.from_client_config(
+            self.client_config,
+            self.scopes,
+            redirect_uri="https://ytstream-py.onrender.com/auth/callback"
+        )
+        flow.fetch_token(code=code)
+        return flow.credentials
+
+    def get_channel_info(self, youtube):
+        """Get authenticated user's channel info"""
+        channels = youtube.channels().list(
+            part="snippet,contentDetails",
+            mine=True
+        ).execute()
+        
+        if channels['items']:
+            channel = channels['items'][0]
+            return {
+                'id': channel['id'],
+                'title': channel['snippet']['title'],
+                'thumbnail': channel['snippet']['thumbnails']['default']['url']
+            }
+        return None
