@@ -6,6 +6,7 @@ from googleapiclient.http import MediaFileUpload
 import subprocess
 from dotenv import load_dotenv
 import logging
+from flask import redirect
 
 load_dotenv()
 
@@ -143,7 +144,7 @@ class YouTubeStreamer:
             redirect_uri="https://ytstream-py.onrender.com/auth/callback"
         )
         flow.fetch_token(code=code)
-        return flow.credentials
+        return redirect('https://ytsattu.netlify.app')
 
     def get_channel_info(self, youtube):
         """Get authenticated user's channel info"""

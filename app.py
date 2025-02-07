@@ -12,9 +12,9 @@ app = Flask(__name__)
 CORS(app, resources={
     r"/*": {
         "origins": [
-            "http://localhost:3000",  # Local development
-            "https://ytstream-py.onrender.com",  # Backend
-            "http://localhost:5000"  # Frontend development
+            "http://localhost:3000",
+            "https://ytstream-py.onrender.com",
+            "https://ytsattu.netlify.app"  # Add your Netlify domain
         ],
         "supports_credentials": True,
         "methods": ["GET", "POST", "OPTIONS"],
