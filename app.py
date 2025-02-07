@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify, session, redirect
 from flask_cors import CORS
-from youtube_streamer import YouTubeStreamer
+from youtube_streamer import YouTubeStreamer, YouTubeStreamError, AuthenticationError, BroadcastError, StreamError, FFmpegError
 import os
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
@@ -14,8 +14,15 @@ from google.oauth2.credentials import Credentials
 load_dotenv()  # Load environment variables
 
 app = Flask(__name__)
-app.secret_key = secrets.token_hex(16)  # Add this for session management
-app.permanent_session_lifetime = timedelta(days=1)  # Session expires in 1 day
+
+# Session configuration
+app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+app.permanent_session_lifetime = timedelta(days=1)
+
+# CORS configuration
 CORS(app, resources={
     r"/*": {
         "origins": [
@@ -24,7 +31,9 @@ CORS(app, resources={
         ],
         "supports_credentials": True,
         "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization", "Origin"]
+        "allow_headers": ["Content-Type", "Authorization", "Origin"],
+        "expose_headers": ["Content-Type", "Authorization"],
+        "max_age": 600
     }
 })
 
@@ -51,6 +60,14 @@ def log_request_info():
 def make_session_permanent():
     session.permanent = True
 
+@app.before_request
+def check_session():
+    if not session.get('youtube_credentials') and request.endpoint not in ['youtube_auth', 'auth_callback', 'home', 'health_check']:
+        return jsonify({
+            'authenticated': False,
+            'message': 'Session expired'
+        }), 401
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -75,14 +92,16 @@ def start_stream():
         if not credentials_json:
             return jsonify({
                 'success': False,
-                'message': 'Not authenticated. Please connect your YouTube account first.'
+                'message': 'Not authenticated. Please connect your YouTube account first.',
+                'error_type': 'auth_error'
             }), 401
         
         # Check file
         if 'video' not in request.files:
             return jsonify({
                 'success': False, 
-                'message': 'No video file provided'
+                'message': 'No video file provided',
+                'error_type': 'validation_error'
             }), 400
         
         file = request.files['video']
@@ -91,13 +110,15 @@ def start_stream():
         if file.filename == '':
             return jsonify({
                 'success': False, 
-                'message': 'No selected file'
+                'message': 'No selected file',
+                'error_type': 'validation_error'
             }), 400
             
         if not allowed_file(file.filename):
             return jsonify({
                 'success': False,
-                'message': 'Invalid file type. Allowed types: mp4, avi, mkv, mov'
+                'message': 'Invalid file type. Allowed types: mp4, avi, mkv, mov',
+                'error_type': 'validation_error'
             }), 400
 
         try:
@@ -122,11 +143,40 @@ def start_stream():
                 'broadcast_url': result['broadcast_url']
             })
             
+        except AuthenticationError as e:
+            return jsonify({
+                'success': False,
+                'message': str(e),
+                'error_type': 'auth_error'
+            }), 401
+            
+        except BroadcastError as e:
+            return jsonify({
+                'success': False,
+                'message': str(e),
+                'error_type': 'broadcast_error'
+            }), 500
+            
+        except StreamError as e:
+            return jsonify({
+                'success': False,
+                'message': str(e),
+                'error_type': 'stream_error'
+            }), 500
+            
+        except FFmpegError as e:
+            return jsonify({
+                'success': False,
+                'message': str(e),
+                'error_type': 'ffmpeg_error'
+            }), 500
+            
         except Exception as e:
             logger.error(f"Streaming error: {str(e)}")
             return jsonify({
                 'success': False,
-                'message': f"Failed to start stream: {str(e)}"
+                'message': f"Failed to start stream: {str(e)}",
+                'error_type': 'unknown_error'
             }), 500
             
         finally:
@@ -139,7 +189,8 @@ def start_stream():
         logger.error(f"Server error: {str(e)}")
         return jsonify({
             'success': False,
-            'message': f"Server error: {str(e)}"
+            'message': f"Server error: {str(e)}",
+            'error_type': 'server_error'
         }), 500
 
 @app.errorhandler(500)
@@ -160,10 +211,13 @@ def not_found(error):
 def youtube_auth():
     try:
         streamer = YouTubeStreamer()
-        auth_url = streamer.get_auth_url()  # Now returns only URL
+        auth_url, state = streamer.get_auth_url()  # Get both URL and state
         
         if not auth_url:
             raise Exception("Failed to generate auth URL")
+            
+        # Store state in session
+        session['oauth_state'] = state
             
         return jsonify({
             'success': True,
@@ -181,25 +235,38 @@ def youtube_auth():
 def auth_callback():
     try:
         code = request.args.get('code')
+        state = request.args.get('state')
+        
+        # Verify state
+        if state != session.get('oauth_state'):
+            logger.error("State mismatch")
+            return redirect('https://ytsattu.netlify.app?error=invalid_state')
+            
         if not code:
-            return redirect('https://ytsattu.netlify.app?error=' + 
-                          urllib.parse.quote('No authorization code received'))
+            logger.error("No authorization code received")
+            return redirect('https://ytsattu.netlify.app?error=no_code')
             
         streamer = YouTubeStreamer()
         try:
-            credentials = streamer.get_credentials(code)  # Updated method name
+            credentials = streamer.get_credentials(code, state)  # Pass state
             session['youtube_credentials'] = credentials.to_json()
-            return redirect('https://ytsattu.netlify.app')
             
+            # Get channel info immediately after auth
+            youtube = streamer.get_youtube_service(credentials.to_json())
+            channel_info = streamer.get_channel_info(youtube)
+            
+            if channel_info:
+                return redirect('https://ytsattu.netlify.app?auth=success')
+            else:
+                return redirect('https://ytsattu.netlify.app?error=no_channel')
+                
         except Exception as e:
             logger.error(f"Failed to get credentials: {str(e)}")
-            return redirect('https://ytsattu.netlify.app?error=' + 
-                          urllib.parse.quote(f'Authentication failed: {str(e)}'))
+            return redirect(f'https://ytsattu.netlify.app?error=auth_failed&message={urllib.parse.quote(str(e))}')
             
     except Exception as e:
         logger.error(f"Callback error: {str(e)}")
-        return redirect('https://ytsattu.netlify.app?error=' + 
-                      urllib.parse.quote(str(e)))
+        return redirect(f'https://ytsattu.netlify.app?error=server_error&message={urllib.parse.quote(str(e))}')
 
 @app.route('/auth/status')
 def auth_status():
@@ -207,12 +274,21 @@ def auth_status():
         credentials_json = session.get('youtube_credentials')
         if not credentials_json:
             return jsonify({
-                'authenticated': False
+                'authenticated': False,
+                'message': 'Not authenticated'
             })
         
         streamer = YouTubeStreamer()
         youtube = streamer.get_youtube_service(credentials_json)
         channel_info = streamer.get_channel_info(youtube)
+        
+        if not channel_info:
+            # Clear invalid session
+            session.pop('youtube_credentials', None)
+            return jsonify({
+                'authenticated': False,
+                'message': 'No channel found'
+            })
         
         return jsonify({
             'authenticated': True,
@@ -220,10 +296,18 @@ def auth_status():
         })
     except Exception as e:
         logger.error(f"Status check error: {str(e)}")
+        # Clear invalid session
+        session.pop('youtube_credentials', None)
         return jsonify({
             'authenticated': False,
             'error': str(e)
         })
+
+# Add CORS headers to all responses
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
 
 if __name__ == '__main__':
     # Get port from environment variable or default to 10000
