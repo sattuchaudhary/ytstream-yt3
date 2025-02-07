@@ -19,7 +19,9 @@ class YouTubeStreamer:
     def __init__(self):
         self.client_id = os.getenv('YOUTUBE_CLIENT_ID')
         self.client_secret = os.getenv('YOUTUBE_CLIENT_SECRET')
-        self.scopes = ['https://www.googleapis.com/auth/youtube']
+        self.scopes = ['https://www.googleapis.com/auth/youtube.force-ssl']
+        self.api_name = "youtube"
+        self.api_version = "v3"
         self.redirect_uri = "https://ytstream-py.onrender.com/auth/callback"
 
     def get_auth_url(self):
@@ -29,7 +31,7 @@ class YouTubeStreamer:
                 raise ValueError("YouTube credentials not found")
             
             flow = InstalledAppFlow.from_client_config({
-                "web": {
+                "installed": {
                     "client_id": self.client_id,
                     "client_secret": self.client_secret,
                     "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -42,7 +44,7 @@ class YouTubeStreamer:
                 access_type='offline',
                 include_granted_scopes='true',
                 prompt='consent'
-            )[0]  # Only return the URL, not state
+            )[0]
             
             return auth_url
             
@@ -53,8 +55,11 @@ class YouTubeStreamer:
     def get_credentials(self, auth_code):
         """Get credentials from auth code"""
         try:
+            if not auth_code:
+                raise ValueError("Authorization code is missing")
+            
             flow = InstalledAppFlow.from_client_config({
-                "web": {
+                "installed": {
                     "client_id": self.client_id,
                     "client_secret": self.client_secret,
                     "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -69,10 +74,9 @@ class YouTubeStreamer:
             logger.error(f"Credentials error: {str(e)}")
             raise
 
-    def get_channel_info(self, credentials):
+    def get_channel_info(self, youtube):
         """Get channel info"""
         try:
-            youtube = build('youtube', 'v3', credentials=credentials)
             request = youtube.channels().list(
                 part="snippet",
                 mine=True
@@ -94,71 +98,77 @@ class YouTubeStreamer:
     def start_stream(self, credentials, video_path, title):
         """Start a YouTube stream"""
         try:
+            if not os.path.exists(video_path):
+                raise ValueError("Video file not found")
+
             youtube = build('youtube', 'v3', credentials=credentials)
             
             # Create broadcast
-            broadcast = youtube.liveBroadcasts().insert(
-                part="snippet,status",
-                body={
-                    "snippet": {
-                        "title": title,
-                        "scheduledStartTime": "2024-02-07T00:00:00.000Z"
-                    },
-                    "status": {
-                        "privacyStatus": "private"
-                    }
-                }
-            ).execute()
-
+            broadcast_id = self.create_broadcast(youtube, title, f"Stream of {os.path.basename(video_path)}")
+            logger.info(f"Created broadcast with ID: {broadcast_id}")
+            
             # Create stream
-            stream = youtube.liveStreams().insert(
-                part="snippet,cdn",
-                body={
-                    "snippet": {
-                        "title": title
-                    },
-                    "cdn": {
-                        "frameRate": "30fps",
-                        "ingestionType": "rtmp",
-                        "resolution": "1080p"
-                    }
-                }
-            ).execute()
-
+            stream_id = self.create_stream(youtube)
+            logger.info(f"Created stream with ID: {stream_id}")
+            
             # Bind broadcast to stream
             youtube.liveBroadcasts().bind(
                 part="id,contentDetails",
-                id=broadcast['id'],
-                streamId=stream['id']
+                id=broadcast_id,
+                streamId=stream_id
             ).execute()
-
+            logger.info("Bound broadcast to stream")
+            
             # Get stream URL
-            stream_url = stream['cdn']['ingestionInfo']['ingestionAddress']
+            stream_url = self.get_stream_url(youtube, stream_id)
+            logger.info(f"Got stream URL: {stream_url}")
             
-            # Start FFmpeg stream
-            command = [
-                'ffmpeg',
-                '-re',
-                '-i', video_path,
-                '-c:v', 'libx264',
-                '-preset', 'veryfast',
-                '-maxrate', '2500k',
-                '-bufsize', '5000k',
-                '-pix_fmt', 'yuv420p',
-                '-g', '60',
-                '-c:a', 'aac',
-                '-b:a', '128k',
-                '-ar', '44100',
-                '-f', 'flv',
-                stream_url
-            ]
-            
-            subprocess.Popen(command)  # Run in background
-            
-            return {
-                'broadcast_url': f'https://youtube.com/watch?v={broadcast["id"]}',
-                'stream_url': stream_url
-            }
+            # Start FFmpeg in background
+            try:
+                command = [
+                    'ffmpeg',
+                    '-re',
+                    '-i', video_path,
+                    '-c:v', 'libx264',
+                    '-preset', 'veryfast',
+                    '-maxrate', '2500k',
+                    '-bufsize', '5000k',
+                    '-pix_fmt', 'yuv420p',
+                    '-g', '60',
+                    '-c:a', 'aac',
+                    '-b:a', '128k',
+                    '-ar', '44100',
+                    '-f', 'flv',
+                    stream_url
+                ]
+                
+                process = subprocess.Popen(
+                    command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                
+                # Check if process started successfully
+                if process.poll() is not None:
+                    raise Exception("Failed to start FFmpeg process")
+                    
+                logger.info("Started FFmpeg process")
+                
+                return {
+                    'success': True,
+                    'broadcast_url': f'https://youtube.com/watch?v={broadcast_id}',
+                    'stream_url': stream_url
+                }
+                
+            except Exception as e:
+                logger.error(f"FFmpeg error: {str(e)}")
+                # Try to cleanup
+                try:
+                    youtube.liveBroadcasts().delete(id=broadcast_id).execute()
+                    youtube.liveStreams().delete(id=stream_id).execute()
+                except:
+                    pass
+                raise Exception(f"Failed to start stream: {str(e)}")
             
         except Exception as e:
             logger.error(f"Stream error: {str(e)}")
@@ -237,7 +247,7 @@ class YouTubeStreamer:
                 json.loads(credentials_json),
                 self.scopes
             )
-            return build(self.api_name, self.api_version, credentials=credentials)
+            return build('youtube', 'v3', credentials=credentials)
         except Exception as e:
             logger.error(f"Error getting service: {str(e)}")
-            raise Exception(f"Failed to get YouTube service: {str(e)}")
+            raise
