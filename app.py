@@ -13,8 +13,12 @@ CORS(app, resources={
     r"/*": {
         "origins": [
             "http://localhost:3000",
-            "https://your-frontend-domain.com"  # Replace with your frontend domain
-        ]
+            "https://ytstream-py.onrender.com",  # Add your backend domain
+            "https://your-frontend-domain.com"    # Add your frontend domain
+        ],
+        "supports_credentials": True,
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
     }
 })
 
