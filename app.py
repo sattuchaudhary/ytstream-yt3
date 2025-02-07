@@ -166,17 +166,16 @@ def not_found(error):
 def youtube_auth():
     try:
         streamer = YouTubeStreamer()
-        auth_url, state = streamer.get_auth_url()
+        auth_url = streamer.get_auth_url()  # Now returns only URL
+        
         if not auth_url:
             raise Exception("Failed to generate auth URL")
             
-        # Store state in session
-        session['oauth_state'] = state
-        
         return jsonify({
             'success': True,
             'authUrl': auth_url
         })
+        
     except Exception as e:
         logger.error(f"Auth error: {str(e)}")
         return jsonify({
@@ -188,19 +187,13 @@ def youtube_auth():
 def auth_callback():
     try:
         code = request.args.get('code')
-        state = request.args.get('state')
-        
-        # Verify state
-        if state != session.get('oauth_state'):
-            raise ValueError("Invalid state parameter")
-            
         if not code:
             return redirect('https://ytsattu.netlify.app?error=' + 
                           urllib.parse.quote('No authorization code received'))
             
         streamer = YouTubeStreamer()
         try:
-            credentials = streamer.get_credentials_from_code(code, state)
+            credentials = streamer.get_credentials(code)  # Updated method name
             session['youtube_credentials'] = credentials.to_json()
             return redirect('https://ytsattu.netlify.app')
             

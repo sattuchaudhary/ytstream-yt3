@@ -25,6 +25,9 @@ class YouTubeStreamer:
     def get_auth_url(self):
         """Get YouTube authentication URL"""
         try:
+            if not self.client_id or not self.client_secret:
+                raise ValueError("YouTube credentials not found")
+            
             flow = InstalledAppFlow.from_client_config({
                 "web": {
                     "client_id": self.client_id,
@@ -35,11 +38,14 @@ class YouTubeStreamer:
                 }
             }, self.scopes)
             
-            auth_url, _ = flow.authorization_url(
+            auth_url = flow.authorization_url(
                 access_type='offline',
-                include_granted_scopes='true'
-            )
+                include_granted_scopes='true',
+                prompt='consent'
+            )[0]  # Only return the URL, not state
+            
             return auth_url
+            
         except Exception as e:
             logger.error(f"Auth URL error: {str(e)}")
             raise
