@@ -23,6 +23,19 @@ class YouTubeStreamer:
         self.api_name = "youtube"
         self.api_version = "v3"
         self.redirect_uri = "https://ytstream-py.onrender.com/auth/callback"
+        self.client_config = {
+            "web": {
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [self.redirect_uri],
+                "javascript_origins": [
+                    "https://ytsattu.netlify.app",
+                    "https://ytstream-py.onrender.com"
+                ]
+            }
+        }
 
     def get_auth_url(self):
         """Get YouTube authentication URL"""
@@ -30,15 +43,7 @@ class YouTubeStreamer:
             if not self.client_id or not self.client_secret:
                 raise ValueError("YouTube credentials not found")
             
-            flow = InstalledAppFlow.from_client_config({
-                "installed": {
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                    "redirect_uris": [self.redirect_uri]
-                }
-            }, self.scopes)
+            flow = InstalledAppFlow.from_client_config(self.client_config, self.scopes)
             
             auth_url = flow.authorization_url(
                 access_type='offline',
@@ -58,15 +63,7 @@ class YouTubeStreamer:
             if not auth_code:
                 raise ValueError("Authorization code is missing")
             
-            flow = InstalledAppFlow.from_client_config({
-                "installed": {
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                    "redirect_uris": [self.redirect_uri]
-                }
-            }, self.scopes)
+            flow = InstalledAppFlow.from_client_config(self.client_config, self.scopes)
             
             flow.fetch_token(code=auth_code)
             return flow.credentials

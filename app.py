@@ -19,9 +19,8 @@ app.permanent_session_lifetime = timedelta(days=1)  # Session expires in 1 day
 CORS(app, resources={
     r"/*": {
         "origins": [
-            "http://localhost:3000",
-            "https://ytstream-py.onrender.com",
-            "https://ytsattu.netlify.app"  # Add your Netlify domain
+            "https://ytsattu.netlify.app",
+            "https://ytstream-py.onrender.com"
         ],
         "supports_credentials": True,
         "methods": ["GET", "POST", "OPTIONS"],
