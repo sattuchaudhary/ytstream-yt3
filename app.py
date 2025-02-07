@@ -4,11 +4,19 @@ from youtube_streamer import YouTubeStreamer
 import os
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
+import logging
 
 load_dotenv()  # Load environment variables
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={
+    r"/*": {
+        "origins": [
+            "http://localhost:3000",
+            "https://your-frontend-domain.com"  # Replace with your frontend domain
+        ]
+    }
+})
 
 # Configuration
 UPLOAD_FOLDER = 'temp_uploads'
@@ -21,6 +29,14 @@ if not os.path.exists(UPLOAD_FOLDER):
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+@app.before_request
+def log_request_info():
+    logger.info('Headers: %s', request.headers)
+    logger.info('Body: %s', request.get_data())
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -30,7 +46,10 @@ def home():
 
 @app.route('/health')
 def health_check():
-    return jsonify({"status": "healthy"})
+    return jsonify({
+        "status": "healthy",
+        "port": os.environ.get('PORT', 10000)
+    })
 
 @app.route('/start-stream', methods=['POST'])
 def start_stream():
@@ -79,6 +98,21 @@ def start_stream():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({
+        "error": "Internal Server Error",
+        "message": str(error)
+    }), 500
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({
+        "error": "Not Found",
+        "message": "The requested resource was not found"
+    }), 404
+
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
+    # Get port from environment variable or default to 10000
+    port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
