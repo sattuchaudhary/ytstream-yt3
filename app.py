@@ -7,11 +7,13 @@ from dotenv import load_dotenv
 import logging
 import secrets
 import urllib.parse
+from datetime import timedelta
 
 load_dotenv()  # Load environment variables
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)  # Add this for session management
+app.permanent_session_lifetime = timedelta(days=1)  # Session expires in 1 day
 CORS(app, resources={
     r"/*": {
         "origins": [
@@ -43,6 +45,10 @@ logger = logging.getLogger(__name__)
 def log_request_info():
     logger.info('Headers: %s', request.headers)
     logger.info('Body: %s', request.get_data())
+
+@app.before_request
+def make_session_permanent():
+    session.permanent = True
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -160,10 +166,13 @@ def not_found(error):
 def youtube_auth():
     try:
         streamer = YouTubeStreamer()
-        auth_url = streamer.get_auth_url()
+        auth_url, state = streamer.get_auth_url()
         if not auth_url:
             raise Exception("Failed to generate auth URL")
             
+        # Store state in session
+        session['oauth_state'] = state
+        
         return jsonify({
             'success': True,
             'authUrl': auth_url
@@ -179,14 +188,19 @@ def youtube_auth():
 def auth_callback():
     try:
         code = request.args.get('code')
+        state = request.args.get('state')
+        
+        # Verify state
+        if state != session.get('oauth_state'):
+            raise ValueError("Invalid state parameter")
+            
         if not code:
             return redirect('https://ytsattu.netlify.app?error=' + 
                           urllib.parse.quote('No authorization code received'))
             
         streamer = YouTubeStreamer()
         try:
-            credentials = streamer.get_credentials_from_code(code)
-            # Store credentials in session
+            credentials = streamer.get_credentials_from_code(code, state)
             session['youtube_credentials'] = credentials.to_json()
             return redirect('https://ytsattu.netlify.app')
             
