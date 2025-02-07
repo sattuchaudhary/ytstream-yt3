@@ -7,6 +7,7 @@ import subprocess
 from dotenv import load_dotenv
 import logging
 from flask import redirect
+import json
 
 load_dotenv()
 
@@ -19,43 +20,32 @@ class YouTubeStreamer:
         self.scopes = ['https://www.googleapis.com/auth/youtube.force-ssl']
         self.api_name = "youtube"
         self.api_version = "v3"
+        self.redirect_uri = "https://ytstream-py.onrender.com/auth/callback"
         self.client_config = {
             "installed": {
                 "client_id": self.client_id,
                 "client_secret": self.client_secret,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": ["https://ytstream-py.onrender.com/auth/callback"]
+                "redirect_uris": [self.redirect_uri]
             }
         }
 
     def authenticate(self):
         """Authenticate with YouTube API"""
         try:
-            client_config = {
-                "installed": {
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                    "redirect_uris": ["http://localhost:10000/oauth2callback"]  # Simplified redirect
-                }
-            }
-            
             if not self.client_id or not self.client_secret:
-                raise ValueError("YouTube credentials not found. Please check your environment variables.")
-
+                raise ValueError("YouTube credentials not found")
+                
+            # Use the same client_config defined in __init__
             flow = InstalledAppFlow.from_client_config(
-                client_config,
+                self.client_config,
                 self.scopes
             )
-            # Use credentials directly instead of local server
-            credentials = Credentials(
-                None,
-                client_id=self.client_id,
-                client_secret=self.client_secret,
-                token_uri="https://oauth2.googleapis.com/token",
-                scopes=self.scopes
+            credentials = flow.run_local_server(
+                port=0,
+                access_type='offline',
+                prompt='consent'
             )
             return build(self.api_name, self.api_version, credentials=credentials)
         except Exception as e:
@@ -145,7 +135,7 @@ class YouTubeStreamer:
             flow = InstalledAppFlow.from_client_config(
                 self.client_config,
                 self.scopes,
-                redirect_uri="https://ytstream-py.onrender.com/auth/callback"
+                redirect_uri=self.redirect_uri
             )
             auth_url, _ = flow.authorization_url(
                 access_type='offline',
@@ -159,13 +149,17 @@ class YouTubeStreamer:
 
     def get_credentials_from_code(self, code):
         """Get credentials from authorization code"""
-        flow = InstalledAppFlow.from_client_config(
-            self.client_config,
-            self.scopes,
-            redirect_uri="https://ytstream-py.onrender.com/auth/callback"
-        )
-        flow.fetch_token(code=code)
-        return redirect('https://ytsattu.netlify.app')
+        try:
+            flow = InstalledAppFlow.from_client_config(
+                self.client_config,
+                self.scopes,
+                redirect_uri="https://ytstream-py.onrender.com/auth/callback"
+            )
+            flow.fetch_token(code=code)
+            return flow.credentials
+        except Exception as e:
+            logger.error(f"Error getting credentials: {str(e)}")
+            raise Exception(f"Failed to get credentials: {str(e)}")
 
     def get_channel_info(self, youtube):
         """Get authenticated user's channel info"""
@@ -182,3 +176,15 @@ class YouTubeStreamer:
                 'thumbnail': channel['snippet']['thumbnails']['default']['url']
             }
         return None
+
+    def get_youtube_service(self, credentials_json):
+        """Get YouTube service from stored credentials"""
+        try:
+            credentials = Credentials.from_authorized_user_info(
+                json.loads(credentials_json),
+                self.scopes
+            )
+            return build(self.api_name, self.api_version, credentials=credentials)
+        except Exception as e:
+            logger.error(f"Error getting service: {str(e)}")
+            raise Exception(f"Failed to get YouTube service: {str(e)}")

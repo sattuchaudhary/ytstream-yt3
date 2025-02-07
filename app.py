@@ -178,17 +178,21 @@ def youtube_auth():
 def auth_callback():
     try:
         code = request.args.get('code')
+        if not code:
+            raise ValueError("No authorization code received")
+            
         streamer = YouTubeStreamer()
         credentials = streamer.get_credentials_from_code(code)
-        # Store credentials in session or database
+        
+        # Store credentials in session
         session['youtube_credentials'] = credentials.to_json()
-        return redirect('http://localhost:3000')  # Redirect to frontend
+        
+        # Redirect to frontend
+        return redirect('https://ytsattu.netlify.app')
+        
     except Exception as e:
         logger.error(f"Callback error: {str(e)}")
-        return jsonify({
-            'success': False,
-            'message': str(e)
-        }), 500
+        return redirect('https://ytsattu.netlify.app?error=' + str(e))
 
 @app.route('/auth/status')
 def auth_status():
