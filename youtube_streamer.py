@@ -18,12 +18,22 @@ class YouTubeStreamer:
 
     def authenticate(self):
         """Authenticate with YouTube API"""
-        credentials = Credentials(
-            None,
-            client_id=self.client_id,
-            client_secret=self.client_secret,
-            scopes=self.scopes
+        # Create client config dictionary from environment variables
+        client_config = {
+            "installed": {
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": ["http://localhost"]
+            }
+        }
+        
+        flow = InstalledAppFlow.from_client_config(
+            client_config,
+            self.scopes
         )
+        credentials = flow.run_local_server(port=0)
         return build(self.api_name, self.api_version, credentials=credentials)
 
     def create_broadcast(self, youtube, title, description):
