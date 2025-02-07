@@ -6,6 +6,7 @@ from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 import logging
 import secrets
+import urllib.parse
 
 load_dotenv()  # Load environment variables
 
@@ -179,20 +180,25 @@ def auth_callback():
     try:
         code = request.args.get('code')
         if not code:
-            raise ValueError("No authorization code received")
+            return redirect('https://ytsattu.netlify.app?error=' + 
+                          urllib.parse.quote('No authorization code received'))
             
         streamer = YouTubeStreamer()
-        credentials = streamer.get_credentials_from_code(code)
-        
-        # Store credentials in session
-        session['youtube_credentials'] = credentials.to_json()
-        
-        # Redirect to frontend
-        return redirect('https://ytsattu.netlify.app')
-        
+        try:
+            credentials = streamer.get_credentials_from_code(code)
+            # Store credentials in session
+            session['youtube_credentials'] = credentials.to_json()
+            return redirect('https://ytsattu.netlify.app')
+            
+        except Exception as e:
+            logger.error(f"Failed to get credentials: {str(e)}")
+            return redirect('https://ytsattu.netlify.app?error=' + 
+                          urllib.parse.quote(f'Authentication failed: {str(e)}'))
+            
     except Exception as e:
         logger.error(f"Callback error: {str(e)}")
-        return redirect('https://ytsattu.netlify.app?error=' + str(e))
+        return redirect('https://ytsattu.netlify.app?error=' + 
+                      urllib.parse.quote(str(e)))
 
 @app.route('/auth/status')
 def auth_status():

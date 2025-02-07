@@ -150,13 +150,24 @@ class YouTubeStreamer:
     def get_credentials_from_code(self, code):
         """Get credentials from authorization code"""
         try:
+            if not code:
+                raise ValueError("Authorization code is missing")
+
             flow = InstalledAppFlow.from_client_config(
                 self.client_config,
                 self.scopes,
-                redirect_uri="https://ytstream-py.onrender.com/auth/callback"
+                redirect_uri=self.redirect_uri  # Use the same redirect_uri
             )
-            flow.fetch_token(code=code)
-            return flow.credentials
+            
+            token = flow.fetch_token(
+                'https://oauth2.googleapis.com/token',
+                code=code,
+                client_secret=self.client_secret
+            )
+            
+            credentials = flow.credentials
+            return credentials
+            
         except Exception as e:
             logger.error(f"Error getting credentials: {str(e)}")
             raise Exception(f"Failed to get credentials: {str(e)}")
