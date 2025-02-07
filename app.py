@@ -5,10 +5,12 @@ import os
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 import logging
+import secrets
 
 load_dotenv()  # Load environment variables
 
 app = Flask(__name__)
+app.secret_key = secrets.token_hex(16)  # Add this for session management
 CORS(app, resources={
     r"/*": {
         "origins": [
@@ -158,6 +160,9 @@ def youtube_auth():
     try:
         streamer = YouTubeStreamer()
         auth_url = streamer.get_auth_url()
+        if not auth_url:
+            raise Exception("Failed to generate auth URL")
+            
         return jsonify({
             'success': True,
             'authUrl': auth_url

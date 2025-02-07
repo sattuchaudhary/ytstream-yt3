@@ -19,6 +19,15 @@ class YouTubeStreamer:
         self.scopes = ['https://www.googleapis.com/auth/youtube.force-ssl']
         self.api_name = "youtube"
         self.api_version = "v3"
+        self.client_config = {
+            "installed": {
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": ["https://ytstream-py.onrender.com/auth/callback"]
+            }
+        }
 
     def authenticate(self):
         """Authenticate with YouTube API"""
@@ -129,12 +138,24 @@ class YouTubeStreamer:
 
     def get_auth_url(self):
         """Get YouTube authentication URL"""
-        flow = InstalledAppFlow.from_client_config(
-            self.client_config,
-            self.scopes,
-            redirect_uri="https://ytstream-py.onrender.com/auth/callback"
-        )
-        return flow.authorization_url(prompt='consent')[0]
+        try:
+            if not self.client_id or not self.client_secret:
+                raise ValueError("YouTube credentials not found")
+                
+            flow = InstalledAppFlow.from_client_config(
+                self.client_config,
+                self.scopes,
+                redirect_uri="https://ytstream-py.onrender.com/auth/callback"
+            )
+            auth_url, _ = flow.authorization_url(
+                access_type='offline',
+                include_granted_scopes='true',
+                prompt='consent'
+            )
+            return auth_url
+        except Exception as e:
+            logger.error(f"Error getting auth URL: {str(e)}")
+            raise Exception(f"Failed to get auth URL: {str(e)}")
 
     def get_credentials_from_code(self, code):
         """Get credentials from authorization code"""
