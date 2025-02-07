@@ -17,10 +17,13 @@ app = Flask(__name__)
 
 # Session configuration
 app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
-app.config['SESSION_COOKIE_SECURE'] = True
-app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'None'
-app.permanent_session_lifetime = timedelta(days=1)
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='None',
+    SESSION_COOKIE_DOMAIN='.onrender.com',
+    PERMANENT_SESSION_LIFETIME=timedelta(days=1)
+)
 
 # CORS configuration
 CORS(app, resources={
@@ -33,7 +36,8 @@ CORS(app, resources={
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization", "Origin"],
         "expose_headers": ["Content-Type", "Authorization"],
-        "max_age": 600
+        "max_age": 600,
+        "allow_credentials": True
     }
 })
 
@@ -306,7 +310,12 @@ def auth_status():
 # Add CORS headers to all responses
 @app.after_request
 def after_request(response):
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    origin = request.headers.get('Origin')
+    if origin in ["https://ytsattu.netlify.app", "https://ytstream-py.onrender.com"]:
+        response.headers.add('Access-Control-Allow-Origin', origin)
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
     return response
 
 if __name__ == '__main__':
